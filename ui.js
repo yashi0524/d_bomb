@@ -17,7 +17,7 @@ const LAYOUTS={
 let LAY=null;
 let VIEW_W=640, VIEW_H=480;  // Phaser canvas size (game area)
 
-// ── DOM helpers for scene/enemy code ──
+// ── DOM helpers for scene/bomb code ──
 const UI={
   setStatus(text,cls){const e=document.getElementById('status-msg');if(e){e.textContent=text;e.className=cls||'';}},
   setHint(text){const e=document.getElementById('hint-text');if(e)e.textContent=text;}
@@ -43,15 +43,14 @@ function initMinimap(){
 
 function paintMinimap(px,py){
   if(!_mmLevel) return;
-  const {walls,pillars,cabinets,exit,key,keyCollected,exitLocked}=_mmLevel;
+  const {trees,cabinets,exit,key,keyCollected,exitLocked}=_mmLevel;
   mmCtx.clearRect(0,0,MM_W,MM_H);
   mmCtx.fillStyle='rgba(20,20,35,0.92)'; mmCtx.fillRect(0,0,MM_W,MM_H);
   mmCtx.save(); mmCtx.globalAlpha=0.28;
   mmCtx.drawImage(exploredCanvas,0,0,MAP_W,MAP_H*ISO_SCALE,0,0,MM_W,MM_H);
   mmCtx.restore();
-  mmCtx.fillStyle='rgba(136,153,170,0.85)';
-  walls.forEach(w=>mmCtx.fillRect(w.x*MM_SX,w.y*MM_SY,Math.max(1,w.w*MM_SX),Math.max(1,w.h*MM_SY)));
-  pillars.forEach(p=>mmCtx.fillRect((p.x-p.s)*MM_SX,(p.y-p.s)*MM_SY,p.s*2*MM_SX,p.s*2*MM_SY));
+  mmCtx.fillStyle='rgba(80,190,90,0.9)';
+  trees.forEach(t=>{mmCtx.beginPath();mmCtx.arc(t.x*MM_SX,t.y*MM_SY,2,0,Math.PI*2);mmCtx.fill();});
   mmCtx.fillStyle='rgba(160,121,42,0.7)';
   cabinets.forEach(c=>mmCtx.fillRect((c.x-5)*MM_SX,(c.y-5)*MM_SY,10*MM_SX,10*MM_SY));
   if(!keyCollected){mmCtx.fillStyle='#FFD700';mmCtx.beginPath();mmCtx.arc(key.x*MM_SX,key.y*MM_SY,2.5,0,Math.PI*2);mmCtx.fill();}
@@ -75,30 +74,21 @@ Object.assign(GameScene.prototype,{
   _hudUpdate(){
     const te=document.getElementById('clock-time');
     const pe=document.getElementById('clock-phase');
-    const ce=document.getElementById('zombie-count');
+    const ce=document.getElementById('bomb-count');
     const be=document.getElementById('clock-box');
     if(!te)return;
-    ce.textContent='🧟 ×'+this._zCount;
+    ce.textContent='💣 Lv '+(this._level||1);
     const fmt=s=>`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
     const st=this._state;
     if(st==='waiting'){be.className='grey';pe.textContent='待機中';te.textContent='00:05';}
-    else if(st==='safe'){be.className='green';pe.textContent='✓ 安全期';te.textContent=fmt(Math.max(0,Math.ceil(this._pt)));}
-    else if(st==='pre_hunt'){be.className='red';pe.textContent='⚠ 即將追捕';te.textContent='準備！';}
-    else if(st==='hunt'){be.className='red';pe.textContent='⚠ 追捕中';te.textContent=fmt(Math.max(0,Math.ceil(this._pt)));}
+    else if(st==='grace'){be.className='green';pe.textContent='✓ 準備中';te.textContent=fmt(Math.max(0,Math.ceil(this._pt)));}
+    else if(st==='bombing'){be.className='red';pe.textContent='⚠ 轟炸中';te.textContent=fmt(Math.floor(this._bt));}
     if(_mmLevel){_mmLevel.exitLocked=this._exitLocked;_mmLevel.keyCollected=this._hasKey;}
   },
 
   _itemHUD(){
-    const gs=document.getElementById('slot-gun');
     const ks=document.getElementById('slot-key');
-    if(!gs||!ks)return;
-    if(this._hasGun){
-      gs.classList.remove('empty');gs.classList.add('has-item');
-      if(_mobMode)gs.classList.add('active-btn');
-      let b=gs.querySelector('.badge');
-      if(!b){b=document.createElement('div');b.className='badge';gs.appendChild(b);}
-      b.textContent=this._gunUsed?'0':'1';b.style.background=this._gunUsed?'#555':'#e63946';
-    } else {gs.classList.add('empty');gs.classList.remove('has-item','active-btn');}
+    if(!ks)return;
     if(this._hasKey){ks.classList.remove('empty');ks.classList.add('has-item');}
     else{ks.classList.add('empty');ks.classList.remove('has-item');}
   },
@@ -110,22 +100,12 @@ Object.assign(GameScene.prototype,{
     document.getElementById('shell').appendChild(this._ov);
   },
 
-  // Tap the gun slot in the item HUD to shoot
-  _bindGunSlot(){
-    const gunSlot=document.getElementById('slot-gun');
-    if(gunSlot){
-      gunSlot.onclick=()=>{ if(this._hasGun&&!this._gunUsed){ const px=this.player.x,py=this.player.y; this._shootAt(px+100,py); } };
-    }
-  },
-
   _updateHint(px,py){
     // Hints
     const hint=document.getElementById('hint-text');
     if(!hint)return;
     const atEx=Phaser.Geom.Circle.Contains(this._exitZone,px,py);
-    const atGun=this._gunSpr&&this._gunSpr.active&&Phaser.Geom.Circle.Contains(this._gunZone,px,py);
     if(atEx&&this._exitLocked)hint.textContent='需要 🔑 才能開門！';
-    else if(atGun&&!this._hasGun)hint.textContent='走近自動撿起手槍！';
     else if(this._nearCab&&!this._hiding)hint.textContent=_mobMode?'🚪 躲入櫃子（最多5秒）':'[F] 躲入櫃子（最多5秒）';
     else if(this._hiding)hint.textContent=_mobMode?'🚪 離開櫃子':'[F] 離開櫃子';
     else hint.textContent='';
@@ -136,7 +116,7 @@ Object.assign(GameScene.prototype,{
 // Virtual input state
 // ═══════════════════════════════════════════════
 let _vjX=0,_vjY=0,_vjActive=false;
-let _vbJump=false,_vbHide=false,_vbShoot=false;
+let _vbJump=false,_vbHide=false;
 let _mobMode=false;
 let game=null;
 window.addEventListener('DOMContentLoaded',()=>{
@@ -255,7 +235,7 @@ function launch(inputMode, resOverride){
     type:Phaser.CANVAS,
     width:VIEW_W,height:VIEW_H,
     parent:'game-container',
-    backgroundColor:'#edf2ed',
+    backgroundColor:'#eaf8d8',
     physics:{default:'arcade',arcade:{gravity:{y:0},debug:false,fixedStep:true,fps:240,tileBias:32}},
     scene:GameScene,
   };
@@ -267,7 +247,6 @@ function launch(inputMode, resOverride){
       _initVpad();
       _setupVBtn('vbtn-jump',()=>_vbJump=true,()=>_vbJump=false);
       _setupVBtn('vbtn-hide',()=>_vbHide=true,()=>_vbHide=false);
-      // vbtn-shoot removed: gun slot in item-hud is the shoot button
     }));
   }
 
@@ -283,11 +262,11 @@ function resetGame(){
   if(game){game.destroy(true);game=null;}
 
   // Reset virtual input
-  _vjX=0;_vjY=0;_vjActive=false;_vbJump=false;_vbHide=false;_vbShoot=false;
+  _vjX=0;_vjY=0;_vjActive=false;_vbJump=false;_vbHide=false;
   _mobMode=false;_mmLevel=null;_camX=0;_camY=0;
 
   // Reset item HUD
-  ['slot-gun','slot-key'].forEach(id=>{
+  ['slot-key'].forEach(id=>{
     const el=document.getElementById(id);if(!el)return;
     el.classList.add('empty');el.classList.remove('has-item','active-btn');
     const b=el.querySelector('.badge');if(b)b.remove();
@@ -300,7 +279,7 @@ function resetGame(){
   document.getElementById('clock-box').className='grey';
   document.getElementById('clock-phase').textContent='待機中';
   document.getElementById('clock-time').textContent='00:05';
-  document.getElementById('zombie-count').textContent='🧟 ×1';
+  document.getElementById('bomb-count').textContent='💣 Lv 1';
 
   window.location.href='index.html';
 }

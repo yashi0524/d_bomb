@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
-// scene.js — map, fog of war, ray-cast, level generation, player, items, GameScene
-// (enemy logic → enemy.js, UI/layout/HUD → ui.js)
+// scene.js — map (trees), fog of war, ray-cast, level generation, player, items, GameScene
+// (falling bombs → bomb.js, UI/layout/HUD → ui.js)
 // ═══════════════════════════════════════════════
 
 // ── ISO scale ──
@@ -10,7 +10,8 @@ const ISO_SCALE=0.6;
 const MAP_W=1600, MAP_H=1120;
 const SCROLL_MARGIN=180;
 const PLAYER_SPEED=220;
-const VISION_RADIUS=200;
+const VISION_RADIUS=260;
+const TREE_COUNT=32;
 const CABINET_RADIUS=22;
 const CABINET_HIDE_MAX=5;
 const TILE=40;
@@ -59,7 +60,7 @@ function paintFog(px,py,vpts){
     dimCtx.clearRect(0,0,VIEW_W,VIEW_H);
     dimCtx.drawImage(exploredCanvas,_camX,fcamY,VIEW_W,VIEW_H,0,0,VIEW_W,VIEW_H);
     dimCtx.save(); dimCtx.globalCompositeOperation='source-in';
-    dimCtx.fillStyle='rgba(0,0,0,0.72)'; dimCtx.fillRect(0,0,VIEW_W,VIEW_H); dimCtx.restore();
+    dimCtx.fillStyle='rgba(0,0,0,0.24)'; dimCtx.fillRect(0,0,VIEW_W,VIEW_H); dimCtx.restore();
     dimCtx.save(); dimCtx.globalCompositeOperation='destination-out';
     dimCtx.beginPath();
     dimCtx.moveTo(vpts[0].x-_camX,fogY(vpts[0].y)-fcamY);
@@ -68,7 +69,7 @@ function paintFog(px,py,vpts){
     fogCtx.drawImage(dimCanvas,0,0);
     const fpx=px-_camX, fpy=fogY(py)-fcamY;
     const gr=fogCtx.createRadialGradient(fpx,fpy,VISION_RADIUS*ISO_SCALE*.8,fpx,fpy,VISION_RADIUS*ISO_SCALE*1.25);
-    gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,0.4)');
+    gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,0.15)');
     fogCtx.fillStyle=gr; fogCtx.fillRect(0,0,VIEW_W,VIEW_H);
   }
 }
@@ -86,6 +87,8 @@ function castVision(px,py,segs,rad){
   segs.forEach(([x1,y1,x2,y2])=>{
     [Math.atan2(y1-py,x1-px),Math.atan2(y2-py,x2-px)].forEach(a=>angles.push(a-.0001,a,a+.0001));
   });
+  // no inner occluders now (trees don't block sight) → add evenly spaced rays so the view is round
+  for(let i=0;i<72;i++)angles.push(-Math.PI+i*Math.PI/36);
   const pts=[];
   angles.forEach(angle=>{
     const dx=Math.cos(angle),dy=Math.sin(angle);let minT=rad;
@@ -101,43 +104,30 @@ function castVision(px,py,segs,rad){
 
 // ── Level generator ──────────────────────────
 function generateLevel(){
-  const margin=3,cols=Math.floor(MAP_W/TILE),rows=Math.floor(MAP_H/TILE);
-  const walls=[],occ=new Set();
-  function addW(tx,ty,tw,th){
-    walls.push({x:tx*TILE,y:ty*TILE,w:tw*TILE,h:th*TILE});
-    for(let dx=0;dx<tw;dx++)for(let dy=0;dy<th;dy++)occ.add(`${tx+dx},${ty+dy}`);
-  }
-  [{cx:10,cy:7},{cx:28,cy:7},{cx:10,cy:18},{cx:28,cy:18},{cx:19,cy:12}].forEach(({cx,cy})=>{
-    const rw=7,rh=5,rx=cx-3,ry=cy-2;
-    if(rx<2||ry<3||rx+rw>cols-2||ry+rh>rows-2)return;
-    addW(rx,ry,3,1);addW(rx+4,ry,3,1);addW(rx,ry+rh-1,3,1);addW(rx+4,ry+rh-1,3,1);
-    addW(rx,ry,1,2);addW(rx,ry+3,1,2);addW(rx+rw-1,ry,1,2);addW(rx+rw-1,ry+3,1,2);
-  });
-  const ne=14+Math.floor(Math.random()*8);
-  for(let a=0;a<ne*12&&walls.length<ne+40;a++){
-    const h=Math.random()>.5,len=2+Math.floor(Math.random()*4);
-    const tx=margin+Math.floor(Math.random()*(cols-2*margin-len));
-    const ty=3+Math.floor(Math.random()*(rows-5));
-    let ok=true;
-    for(let i=0;i<len;i++){if(occ.has(h?`${tx+i},${ty}`:`${tx},${ty+i}`)){ok=false;break;}}
-    if(!ok)continue;
-    if(h)addW(tx,ty,len,1);else addW(tx,ty,1,len);
-  }
-  const pillars=[];
-  for(let a=0;a<200&&pillars.length<10;a++){
-    const tx=3+Math.floor(Math.random()*(cols-6)),ty=3+Math.floor(Math.random()*(rows-6));
-    if(!occ.has(`${tx},${ty}`)){occ.add(`${tx},${ty}`);pillars.push({x:tx*TILE+20,y:ty*TILE+20,s:12});}
+  const cols=Math.floor(MAP_W/TILE),rows=Math.floor(MAP_H/TILE);
+  const occ=new Set();
+  // Exit (on one of the map edges)
+  const ep=Math.floor(Math.random()*4);let exit;
+  if(ep===0)exit={x:(8+Math.floor(Math.random()*(cols-12)))*TILE,y:TILE};
+  else if(ep===1)exit={x:(2+Math.floor(Math.random()*(cols-4)))*TILE,y:(rows-2)*TILE};
+  else if(ep===2)exit={x:TILE,y:(4+Math.floor(Math.random()*(rows-6)))*TILE};
+  else exit={x:(cols-2)*TILE,y:(2+Math.floor(Math.random()*(rows-4)))*TILE};
+  // Trees: sparse, spaced apart, never on the spawn point or the exit
+  const trees=[];
+  const rcx=Math.floor(cols/2),rcy=Math.floor(rows/2);
+  for(let a=0;a<800&&trees.length<TREE_COUNT;a++){
+    const tx=2+Math.floor(Math.random()*(cols-4)),ty=2+Math.floor(Math.random()*(rows-4));
+    if(Math.abs(tx-rcx)<=3&&Math.abs(ty-rcy)<=3)continue;
+    const x=tx*TILE+20,y=ty*TILE+20;
+    if(Math.hypot(x-exit.x,y-exit.y)<110)continue;
+    if(trees.some(t=>Math.hypot(t.x-x,t.y-y)<TILE*3.5))continue;
+    occ.add(`${tx},${ty}`);trees.push({x,y});
   }
   const cabinets=[];
   for(let a=0;a<300&&cabinets.length<7;a++){
     const tx=2+Math.floor(Math.random()*(cols-4)),ty=3+Math.floor(Math.random()*(rows-5));
     if(!occ.has(`${tx},${ty}`)){occ.add(`${tx},${ty}`);cabinets.push({x:tx*TILE+20,y:ty*TILE+20});}
   }
-  const ep=Math.floor(Math.random()*4);let exit;
-  if(ep===0)exit={x:(8+Math.floor(Math.random()*(cols-12)))*TILE,y:TILE};
-  else if(ep===1)exit={x:(2+Math.floor(Math.random()*(cols-4)))*TILE,y:(rows-2)*TILE};
-  else if(ep===2)exit={x:TILE,y:(4+Math.floor(Math.random()*(rows-6)))*TILE};
-  else exit={x:(cols-2)*TILE,y:(2+Math.floor(Math.random()*(rows-4)))*TILE};
   let key=null;
   for(let a=0;a<300&&!key;a++){
     const tx=2+Math.floor(Math.random()*(cols-4)),ty=3+Math.floor(Math.random()*(rows-5));
@@ -147,21 +137,22 @@ function generateLevel(){
     }
   }
   if(!key)key={x:400,y:900};
-  return {walls,pillars,cabinets,exit,key,keyCollected:false,exitLocked:true};
+  // walls/pillars stay empty: trees do not block vision (only the map border does)
+  return {walls:[],pillars:[],trees,cabinets,exit,key,keyCollected:false,exitLocked:true};
 }
 
 // ═══════════════════════════════════════════════
-// Phaser Scene (core: map / player / items). Enemy + UI methods are mixed in by enemy.js / ui.js
+// Phaser Scene (core: map / player / items). Bomb + UI methods are mixed in by bomb.js / ui.js
 // ═══════════════════════════════════════════════
 class GameScene extends Phaser.Scene{
   constructor(){super('GameScene');}
 
   preload(){
     this.textures.addCanvas('player',  drawCat(48));
-    this._preloadEnemy();
+    this.textures.addCanvas('tree_tex',drawTree(64));
+    this._preloadBombs();
     this.textures.addCanvas('cabinet', drawCabinet(44));
     this.textures.addCanvas('key_tex', drawKeyTex(36));
-    this.textures.addCanvas('gun_tex', drawGun(32));
     this.textures.addCanvas('exit_locked',drawExitTex(48,true));
     this.textures.addCanvas('exit_open',  drawExitTex(48,false));
   }
@@ -178,34 +169,19 @@ class GameScene extends Phaser.Scene{
     // Background
     const bg=this.add.graphics().setDepth(0);
     for(let tx=0;tx<MAP_W/TILE;tx++)for(let ty=0;ty<MAP_H/TILE;ty++){
-      bg.fillStyle((tx+ty)%2===0?0xedf2ed:0xe3eae3,1);
+      bg.fillStyle((tx+ty)%2===0?0xeaf8d8:0xdff2c8,1);
       bg.fillRect(tx*TILE,ty*TILE,TILE,TILE);
     }
-    bg.lineStyle(1,0xd0d8d0,.5);
+    bg.lineStyle(1,0xc9e2ae,.5);
     for(let x=0;x<=MAP_W;x+=TILE)bg.lineBetween(x,0,x,MAP_H);
     for(let y=0;y<=MAP_H;y+=TILE)bg.lineBetween(0,y,MAP_W,y);
 
-    // Walls
+    // Trees (replace the old walls): trunk collider + y-sorted sprite
     this.walls=this.physics.add.staticGroup();
-    const wg=this.add.graphics().setDepth(2); const SIDE=16;
-    lv.walls.forEach(w=>{
-      wg.fillStyle(0x3a4455,1);wg.fillRect(w.x,w.y+w.h,w.w,SIDE);
-      wg.fillStyle(0x8899aa,1);wg.fillRect(w.x,w.y,w.w,w.h);
-      wg.fillStyle(0xbcccdd,.3);wg.fillRect(w.x+2,w.y+2,w.w-4,Math.min(6,w.h-4));
-      wg.lineStyle(5,0xaaccff,.1);wg.strokeRect(w.x-2,w.y-2,w.w+4,w.h+4);
-      wg.lineStyle(2,0xbbddff,.22);wg.strokeRect(w.x-1,w.y-1,w.w+2,w.h+2);
-      wg.lineStyle(1.5,0xddeeff,.6);wg.strokeRect(w.x,w.y,w.w,w.h);
-      const bw=w.w<w.h?w.w+4:w.w,bh=w.w<w.h?w.h:w.h+4;
-      const b=this.walls.create(w.x+w.w/2,w.y+w.h/2,null);
-      b.setVisible(false);b.body.setSize(bw,bh);b.refreshBody();
-    });
-    lv.pillars.forEach(p=>{
-      const sz=p.s*2;
-      wg.fillStyle(0x3a4455,1);wg.fillRect(p.x-p.s,p.y+p.s,sz,SIDE);
-      wg.fillStyle(0x667799,1);wg.fillRect(p.x-p.s,p.y-p.s,sz,sz);
-      wg.lineStyle(1.5,0xbbddff,.55);wg.strokeRect(p.x-p.s,p.y-p.s,sz,sz);
-      const b=this.walls.create(p.x,p.y,null);
-      b.setVisible(false);b.body.setSize(sz,sz);b.refreshBody();
+    lv.trees.forEach(t=>{
+      this.add.image(t.x,t.y,'tree_tex').setOrigin(0.5,0.9).setDisplaySize(72,120).setDepth(4.5+t.y/MAP_H);
+      const b=this.walls.create(t.x,t.y,null);
+      b.setVisible(false);b.body.setSize(18,14);b.refreshBody();
     });
 
     // Cabinets
@@ -217,14 +193,6 @@ class GameScene extends Phaser.Scene{
       sp.body.setSize(36,36);sp.refreshBody();
       this._cabs.push({sprite:sp,x:c.x,y:c.y});
     });
-
-    // Gun
-    this._hasGun=false;this._gunUsed=false;
-    const gi=Math.floor(Math.random()*this._cabs.length);
-    const gc=this._cabs[gi];
-    this._gunSpr=this.add.image(gc.x,gc.y-26,'gun_tex').setDisplaySize(28,23).setDepth(4).setAlpha(0.9);
-    this.tweens.add({targets:this._gunSpr,y:gc.y-30,yoyo:true,repeat:-1,duration:900,ease:'Sine.easeInOut'});
-    this._gunZone=new Phaser.Geom.Circle(gc.x,gc.y,CABINET_RADIUS+32);
 
     // Key
     this._hasKey=false;
@@ -248,8 +216,8 @@ class GameScene extends Phaser.Scene{
     this._jumpGhost=null;
     this._shadow=this.add.graphics().setDepth(4);
 
-    // Enemies + train (enemy.js)
-    this._initEnemies();
+    // Bombs (bomb.js)
+    this._initBombs();
 
     // HUD text (screen-fixed)
     this._hideBar=this.add.graphics().setDepth(20).setScrollFactor(0);
@@ -265,22 +233,18 @@ class GameScene extends Phaser.Scene{
       space:Phaser.Input.Keyboard.KeyCodes.SPACE, f:Phaser.Input.Keyboard.KeyCodes.F,
     });
     this._spWas=false;this._fWas=false;
-    this.input.on('pointerdown',(p)=>{ if(p.leftButtonDown())this._shootAt(p.x+_camX,p.y+_camY); });
-
-    // Gun slot tap (ui.js)
-    this._bindGunSlot();
 
     // Colliders
     this.physics.add.collider(this.player,this.walls);
 
     // State
-    this._state='waiting';this._pt=0;this._firstSafe=true;
+    this._state='waiting';this._pt=0;
     this._startTime=null;this._gameTime=0;
     this._hiding=false;this._hideT=0;this._nearCab=null;
     this._caught=false;this._won=false;
-    this._keyLbl=null;this._gunLbl=null;this._vbShootWas=false;
+    this._keyLbl=null;
 
-    this._showOv('🐱','請選擇開始方式<br><br>找到 🔑 鑰匙 → 抵達 EXIT 即勝利');
+    this._showOv('🐱','炸彈會從天上掉下來！<br><br>找到 🔑 鑰匙 → 抵達 EXIT 即勝利');
     this._hudUpdate();
   }
 
@@ -315,7 +279,8 @@ class GameScene extends Phaser.Scene{
 
     if(this._state==='waiting')return;
     const dt=delta/1000;
-    this._updatePhase(dt);
+    this._updateBombs(dt);
+    if(this._caught)return;
 
     const {up,down,left,right,space,f}=this.keys;
     const sx=px-_camX,sy=py-_camY;
@@ -342,7 +307,6 @@ class GameScene extends Phaser.Scene{
     const spDown=space.isDown||_vbJump;
     if(spDown&&!this._spWas&&!this._hiding&&!this._jumping){
       this._jumping=true;this._jumpT=0;
-      this._setCatchEnabled(false);
     }
     this._spWas=spDown;
     if(this._jumping){
@@ -350,7 +314,6 @@ class GameScene extends Phaser.Scene{
       if(t>=1){
         this._jumping=false;this._jumpZ=0;
         this.player.setDisplaySize(36,60);this._shadow.clear();
-        this._setCatchEnabled(true);
       } else {
         this._jumpZ=Math.sin(t*Math.PI)*44;
         const sc=1+Math.sin(t*Math.PI)*.2;
@@ -364,7 +327,7 @@ class GameScene extends Phaser.Scene{
 
     if(this._jumping){
       if(!this._jumpGhost){
-        this._jumpGhost=this.add.image(px,py,'player').setDisplaySize(36,60).setDepth(6);
+        this._jumpGhost=this.add.image(px,py,'player').setDisplaySize(36,60).setDepth(4.6+py/MAP_H);
         this.player.setAlpha(0);
       }
       const sc2=1+Math.sin((this._jumpT/0.42)*Math.PI)*.2;
@@ -385,6 +348,10 @@ class GameScene extends Phaser.Scene{
     }
     this._fWas=fDown;
 
+    // Depth sort against trees
+    this.player.setDepth(4.5+py/MAP_H);
+    if(this._jumpGhost)this._jumpGhost.setDepth(4.6+py/MAP_H);
+
     // Movement
     if(!this._hiding){
       let vx=0,vy=0;
@@ -401,20 +368,6 @@ class GameScene extends Phaser.Scene{
 
     // Item labels
     if(this._keyLbl)this._keyLbl.setPosition(sx+9,sy-24);
-    if(this._gunLbl)this._gunLbl.setPosition(sx-9,sy-24);
-
-    this._updateVirtualShoot();
-
-    // Gun pickup
-    if(!this._hasGun&&this._gunSpr&&this._gunSpr.active&&Phaser.Geom.Circle.Contains(this._gunZone,px,py)){
-      this._hasGun=true;this._gunSpr.destroy();this._gunSpr=null;this._itemHUD();
-      const gb=this.add.graphics().setDepth(25).setScrollFactor(0);
-      gb.fillStyle(0x000000,.75);gb.fillRoundedRect(VIEW_W/2-140,VIEW_H/2-28,280,56,10);
-      gb.lineStyle(2,0xaaa,.9);gb.strokeRoundedRect(VIEW_W/2-140,VIEW_H/2-28,280,56,10);
-      const gm=this.add.text(VIEW_W/2,VIEW_H/2-0,'🔫 撿到手槍！',{fontSize:'18px',fontFamily:'Courier New',color:'#fff',stroke:'#000',strokeThickness:3}).setOrigin(0.5).setDepth(26).setScrollFactor(0);
-      this.tweens.add({targets:[gm,gb],alpha:0,delay:1400,duration:600,onComplete:()=>{gm.destroy();gb.destroy();}});
-      this._gunLbl=this.add.text(sx-9,sy-24,'🔫',{fontSize:'14px'}).setOrigin(0.5,1).setDepth(20).setScrollFactor(0);
-    }
 
     // Key pickup
     if(!this._hasKey&&Phaser.Geom.Circle.Contains(this._keyZone,px,py)){
@@ -437,8 +390,6 @@ class GameScene extends Phaser.Scene{
       this._showOv('🎉',`逃脫成功！<br><small style="color:#aaa">用時 ${_mm}:${_ss}</small><br><br><button onclick="resetGame()" style="margin-top:10px;padding:7px 18px;background:#27ae60;color:#fff;border:none;border-radius:8px;font-family:'Courier New',monospace;font-size:14px;cursor:pointer;">🔄 再玩</button>`);
       this._ov.style.pointerEvents='auto';
     }
-
-    this._updateEnemies(px,py);
 
     this._updateHint(px,py);
   }

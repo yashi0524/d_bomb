@@ -64,7 +64,7 @@
     }
     #clock-phase{font-size:9px;letter-spacing:.08em;color:#777;}
     #clock-time{font-size:18px;font-weight:bold;color:#aaa;letter-spacing:.04em;line-height:1;}
-    #zombie-count{font-size:11px;color:#7dab6e;}
+    #bomb-count{font-size:11px;color:#e8a33d;}
     #clock-box.red   #clock-phase,#clock-box.red   #clock-time{color:#e63946;}
     #clock-box.green #clock-phase,#clock-box.green #clock-time{color:#50c878;}
     #clock-box.red  {background:transparent;}
