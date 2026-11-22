@@ -43,7 +43,7 @@ function initMinimap(){
 
 function paintMinimap(px,py){
   if(!_mmLevel) return;
-  const {trees,cabinets,exit,key,keyCollected,exitLocked}=_mmLevel;
+  const {trees,hay,huts,exit,key,keyCollected,exitLocked}=_mmLevel;
   mmCtx.clearRect(0,0,MM_W,MM_H);
   mmCtx.fillStyle='rgba(20,20,35,0.92)'; mmCtx.fillRect(0,0,MM_W,MM_H);
   mmCtx.save(); mmCtx.globalAlpha=0.28;
@@ -51,8 +51,10 @@ function paintMinimap(px,py){
   mmCtx.restore();
   mmCtx.fillStyle='rgba(80,190,90,0.9)';
   trees.forEach(t=>{mmCtx.beginPath();mmCtx.arc(t.x*MM_SX,t.y*MM_SY,2,0,Math.PI*2);mmCtx.fill();});
-  mmCtx.fillStyle='rgba(160,121,42,0.7)';
-  cabinets.forEach(c=>mmCtx.fillRect((c.x-5)*MM_SX,(c.y-5)*MM_SY,10*MM_SX,10*MM_SY));
+  mmCtx.fillStyle='rgba(240,200,70,0.9)';
+  (hay||[]).forEach(h=>mmCtx.fillRect(h.x*MM_SX-1,h.y*MM_SY-1,2,2));
+  mmCtx.fillStyle='#c98a3c';
+  (huts||[]).forEach(h=>mmCtx.fillRect(h.x*MM_SX-3,h.y*MM_SY-3,6,6));
   if(!keyCollected){mmCtx.fillStyle='#FFD700';mmCtx.beginPath();mmCtx.arc(key.x*MM_SX,key.y*MM_SY,2.5,0,Math.PI*2);mmCtx.fill();}
   mmCtx.fillStyle=exitLocked?'#888':'#00ff88';
   mmCtx.fillRect((exit.x-8)*MM_SX,(exit.y-8)*MM_SY,16*MM_SX,16*MM_SY);
@@ -88,9 +90,18 @@ Object.assign(GameScene.prototype,{
 
   _itemHUD(){
     const ks=document.getElementById('slot-key');
-    if(!ks)return;
+    const hs=document.getElementById('slot-hay');
+    if(!ks||!hs)return;
     if(this._hasKey){ks.classList.remove('empty');ks.classList.add('has-item');}
     else{ks.classList.add('empty');ks.classList.remove('has-item');}
+    const n=this._hayN||0;
+    let b=hs.querySelector('.badge');
+    if(n>0){
+      hs.classList.remove('empty');hs.classList.add('has-item');
+      if(!b){b=document.createElement('div');b.className='badge';hs.appendChild(b);}
+      b.textContent=n;b.style.background=n>=HAY_PER_HUT?'#2e9e4f':'#e08a1e';
+    } else {hs.classList.add('empty');hs.classList.remove('has-item');if(b)b.remove();}
+    if(_mobMode&&n>=HAY_PER_HUT)hs.classList.add('active-btn');else hs.classList.remove('active-btn');
   },
 
   _initOverlay(){
@@ -106,8 +117,9 @@ Object.assign(GameScene.prototype,{
     if(!hint)return;
     const atEx=Phaser.Geom.Circle.Contains(this._exitZone,px,py);
     if(atEx&&this._exitLocked)hint.textContent='需要 🔑 才能開門！';
-    else if(this._nearCab&&!this._hiding)hint.textContent=_mobMode?'🚪 躲入櫃子（最多5秒）':'[F] 躲入櫃子（最多5秒）';
-    else if(this._hiding)hint.textContent=_mobMode?'🚪 離開櫃子':'[F] 離開櫃子';
+    else if(this._nearHut&&!this._hiding)hint.textContent=_mobMode?'🚪 躲入茅草屋（最多5秒）':'[F] 躲入茅草屋（最多5秒）';
+    else if(this._hiding)hint.textContent=_mobMode?'🚪 離開茅草屋':'[F] 離開茅草屋';
+    else if((this._hayN||0)>=HAY_PER_HUT)hint.textContent=_mobMode?'點 🌾 建造茅草屋':'[B] 建造茅草屋';
     else hint.textContent='';
   }
 });
@@ -235,7 +247,7 @@ function launch(inputMode, resOverride){
     type:Phaser.CANVAS,
     width:VIEW_W,height:VIEW_H,
     parent:'game-container',
-    backgroundColor:'#eaf8d8',
+    backgroundColor:'#93d46b',
     physics:{default:'arcade',arcade:{gravity:{y:0},debug:false,fixedStep:true,fps:240,tileBias:32}},
     scene:GameScene,
   };
@@ -266,7 +278,7 @@ function resetGame(){
   _mobMode=false;_mmLevel=null;_camX=0;_camY=0;
 
   // Reset item HUD
-  ['slot-key'].forEach(id=>{
+  ['slot-hay','slot-key'].forEach(id=>{
     const el=document.getElementById(id);if(!el)return;
     el.classList.add('empty');el.classList.remove('has-item','active-btn');
     const b=el.querySelector('.badge');if(b)b.remove();

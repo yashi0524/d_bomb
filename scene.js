@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 // scene.js — map (trees), fog of war, ray-cast, level generation, player, items, GameScene
-// (falling bombs → bomb.js, UI/layout/HUD → ui.js)
+// (falling bombs → bomb.js, hay + huts → hay.js, UI/layout/HUD → ui.js)
 // ═══════════════════════════════════════════════
 
 // ── ISO scale ──
@@ -12,8 +12,7 @@ const SCROLL_MARGIN=180;
 const PLAYER_SPEED=220;
 const VISION_RADIUS=260;
 const TREE_COUNT=32;
-const CABINET_RADIUS=22;
-const CABINET_HIDE_MAX=5;
+const HIDE_MAX=5;             // max seconds hidden in a hut
 const TILE=40;
 
 // ── Fog canvases (resized on launch) ──
@@ -123,11 +122,6 @@ function generateLevel(){
     if(trees.some(t=>Math.hypot(t.x-x,t.y-y)<TILE*3.5))continue;
     occ.add(`${tx},${ty}`);trees.push({x,y});
   }
-  const cabinets=[];
-  for(let a=0;a<300&&cabinets.length<7;a++){
-    const tx=2+Math.floor(Math.random()*(cols-4)),ty=3+Math.floor(Math.random()*(rows-5));
-    if(!occ.has(`${tx},${ty}`)){occ.add(`${tx},${ty}`);cabinets.push({x:tx*TILE+20,y:ty*TILE+20});}
-  }
   let key=null;
   for(let a=0;a<300&&!key;a++){
     const tx=2+Math.floor(Math.random()*(cols-4)),ty=3+Math.floor(Math.random()*(rows-5));
@@ -138,11 +132,11 @@ function generateLevel(){
   }
   if(!key)key={x:400,y:900};
   // walls/pillars stay empty: trees do not block vision (only the map border does)
-  return {walls:[],pillars:[],trees,cabinets,exit,key,keyCollected:false,exitLocked:true};
+  return {walls:[],pillars:[],trees,exit,key,keyCollected:false,exitLocked:true};
 }
 
 // ═══════════════════════════════════════════════
-// Phaser Scene (core: map / player / items). Bomb + UI methods are mixed in by bomb.js / ui.js
+// Phaser Scene (core: map / player / items). Bomb / hay / UI methods are mixed in by bomb.js / hay.js / ui.js
 // ═══════════════════════════════════════════════
 class GameScene extends Phaser.Scene{
   constructor(){super('GameScene');}
@@ -151,7 +145,7 @@ class GameScene extends Phaser.Scene{
     this.textures.addCanvas('player',  drawCat(48));
     this.textures.addCanvas('tree_tex',drawTree(64));
     this._preloadBombs();
-    this.textures.addCanvas('cabinet', drawCabinet(44));
+    this._preloadHay();
     this.textures.addCanvas('key_tex', drawKeyTex(36));
     this.textures.addCanvas('exit_locked',drawExitTex(48,true));
     this.textures.addCanvas('exit_open',  drawExitTex(48,false));
@@ -166,15 +160,21 @@ class GameScene extends Phaser.Scene{
     this.cameras.main.setBounds(0,0,MAP_W,MAP_H);
     this.cameras.main.setScroll(MAP_W/2-VIEW_W/2,MAP_H/2-VIEW_H/2);
 
-    // Background
+    // Background: grass with random tufts and a few flowers
     const bg=this.add.graphics().setDepth(0);
     for(let tx=0;tx<MAP_W/TILE;tx++)for(let ty=0;ty<MAP_H/TILE;ty++){
-      bg.fillStyle((tx+ty)%2===0?0xeaf8d8:0xdff2c8,1);
+      bg.fillStyle((tx+ty)%2===0?0x93d46b:0x8acd62,1);
       bg.fillRect(tx*TILE,ty*TILE,TILE,TILE);
     }
-    bg.lineStyle(1,0xc9e2ae,.5);
-    for(let x=0;x<=MAP_W;x+=TILE)bg.lineBetween(x,0,x,MAP_H);
-    for(let y=0;y<=MAP_H;y+=TILE)bg.lineBetween(0,y,MAP_W,y);
+    bg.lineStyle(1.5,0x6fb44c,.7);
+    for(let n=0;n<1700;n++){
+      const gx=Math.random()*MAP_W,gy=Math.random()*MAP_H;
+      bg.lineBetween(gx,gy,gx-2,gy-5);bg.lineBetween(gx,gy,gx+2,gy-6);bg.lineBetween(gx,gy,gx,gy-4);
+    }
+    const flowers=[0xffffff,0xffe45c,0xff9ecb];
+    for(let n=0;n<110;n++){
+      bg.fillStyle(flowers[n%3],0.9);bg.fillCircle(Math.random()*MAP_W,Math.random()*MAP_H,2);
+    }
 
     // Trees (replace the old walls): trunk collider + y-sorted sprite
     this.walls=this.physics.add.staticGroup();
@@ -182,16 +182,6 @@ class GameScene extends Phaser.Scene{
       this.add.image(t.x,t.y,'tree_tex').setOrigin(0.5,0.9).setDisplaySize(72,120).setDepth(4.5+t.y/MAP_H);
       const b=this.walls.create(t.x,t.y,null);
       b.setVisible(false);b.body.setSize(18,14);b.refreshBody();
-    });
-
-    // Cabinets
-    this._cabs=[];
-    const cg=this.physics.add.staticGroup();
-    lv.cabinets.forEach(c=>{
-      const sp=cg.create(c.x,c.y,'cabinet');
-      sp.setOrigin(0.5).setDisplaySize(44,73).setDepth(3);
-      sp.body.setSize(36,36);sp.refreshBody();
-      this._cabs.push({sprite:sp,x:c.x,y:c.y});
     });
 
     // Key
@@ -216,8 +206,9 @@ class GameScene extends Phaser.Scene{
     this._jumpGhost=null;
     this._shadow=this.add.graphics().setDepth(4);
 
-    // Bombs (bomb.js)
+    // Bombs (bomb.js) + hay / huts (hay.js)
     this._initBombs();
+    this._initHay();
 
     // HUD text (screen-fixed)
     this._hideBar=this.add.graphics().setDepth(20).setScrollFactor(0);
@@ -230,9 +221,9 @@ class GameScene extends Phaser.Scene{
     this.keys=this.input.keyboard.addKeys({
       up:Phaser.Input.Keyboard.KeyCodes.W, down:Phaser.Input.Keyboard.KeyCodes.S,
       left:Phaser.Input.Keyboard.KeyCodes.A, right:Phaser.Input.Keyboard.KeyCodes.D,
-      space:Phaser.Input.Keyboard.KeyCodes.SPACE, f:Phaser.Input.Keyboard.KeyCodes.F,
+      space:Phaser.Input.Keyboard.KeyCodes.SPACE, f:Phaser.Input.Keyboard.KeyCodes.F, b:Phaser.Input.Keyboard.KeyCodes.B,
     });
-    this._spWas=false;this._fWas=false;
+    this._spWas=false;this._fWas=false;this._bWas=false;
 
     // Colliders
     this.physics.add.collider(this.player,this.walls);
@@ -240,11 +231,11 @@ class GameScene extends Phaser.Scene{
     // State
     this._state='waiting';this._pt=0;
     this._startTime=null;this._gameTime=0;
-    this._hiding=false;this._hideT=0;this._nearCab=null;
+    this._hiding=false;this._hideT=0;this._nearHut=null;
     this._caught=false;this._won=false;
     this._keyLbl=null;
 
-    this._showOv('🐱','炸彈會從天上掉下來！<br><br>找到 🔑 鑰匙 → 抵達 EXIT 即勝利');
+    this._showOv('🐱','炸彈會從天上掉下來！<br>收集 🌾 乾草，按 B 蓋茅草屋躲藏<br><br>找到 🔑 鑰匙 → 抵達 EXIT 即勝利');
     this._hudUpdate();
   }
 
@@ -282,25 +273,20 @@ class GameScene extends Phaser.Scene{
     this._updateBombs(dt);
     if(this._caught)return;
 
-    const {up,down,left,right,space,f}=this.keys;
+    const {up,down,left,right,space,f,b}=this.keys;
     const sx=px-_camX,sy=py-_camY;
 
-    // Cabinet proximity
-    let nc=null,nd=Infinity;
-    this._cabs.forEach(c=>{
-      const d=Phaser.Math.Distance.Between(px,py,c.x,c.y);
-      if(d<CABINET_RADIUS+32&&d<nd){nd=d;nc=c;}
-    });
-    this._nearCab=nc;
+    // Hut proximity
+    this._nearHut=this._findNearHut(px,py);
 
     // Hide timer
     if(this._hiding){
       this._hideT+=dt;
-      const pct=Math.max(0,1-this._hideT/CABINET_HIDE_MAX);
+      const pct=Math.max(0,1-this._hideT/HIDE_MAX);
       this._hideBar.clear();
       this._hideBar.fillStyle(0x000000,.55);this._hideBar.fillRect(sx-22,sy-44,44,7);
       this._hideBar.fillStyle(pct>.4?0x50c878:0xe63946,1);this._hideBar.fillRect(sx-22,sy-44,44*pct,7);
-      if(this._hideT>=CABINET_HIDE_MAX)this._eject();
+      if(this._hideT>=HIDE_MAX)this._eject();
     } else {this._hideBar.clear();}
 
     // Jump
@@ -341,12 +327,16 @@ class GameScene extends Phaser.Scene{
     // Hide/F
     const fDown=f.isDown||_vbHide;
     if(fDown&&!this._fWas){
-      if(this._nearCab&&!this._hiding&&!this._jumping){
+      if(this._nearHut&&!this._hiding&&!this._jumping){
         this._hiding=true;this._hideT=0;this.player.setAlpha(0.12);
-        UI.setStatus('躲在櫃子裡','hiding');
+        UI.setStatus('躲在茅草屋裡','hiding');
       } else if(this._hiding){this._eject();}
     }
     this._fWas=fDown;
+
+    // Build a hut (B)
+    if(b.isDown&&!this._bWas)this._tryBuild();
+    this._bWas=b.isDown;
 
     // Depth sort against trees
     this.player.setDepth(4.5+py/MAP_H);
@@ -381,6 +371,9 @@ class GameScene extends Phaser.Scene{
       this.tweens.add({targets:[bm,bb],alpha:0,delay:1400,duration:600,onComplete:()=>{bm.destroy();bb.destroy();}});
       this._keyLbl=this.add.text(sx+9,sy-24,'🔑',{fontSize:'14px'}).setOrigin(0.5,1).setDepth(20).setScrollFactor(0);
     }
+
+    // Hay pickup / respawn (hay.js)
+    this._updateHay(dt,px,py);
 
     // Exit
     if(!this._exitLocked&&Phaser.Geom.Circle.Contains(this._exitZone,px,py)){

@@ -48,39 +48,6 @@ function drawCat(size){
   return c;
 }
 
-// ── Cabinet ──────────────────────────────────
-function drawCabinet(size){
-  const c=document.createElement('canvas');
-  const W=size, H=Math.round(size*1.4);  // taller to show side in oblique
-  c.width=W; c.height=H;
-  const ctx=c.getContext('2d');
-
-  // Side face (bottom strip — the "depth" in oblique view)
-  ctx.fillStyle='#6a4d10';
-  ctx.fillRect(2, size, W-4, H-size-2);
-  // Highlight line between top and side
-  ctx.fillStyle='#c49a3c';
-  ctx.fillRect(2, size-1, W-4, 2);
-
-  // Top face
-  ctx.fillStyle='#8B6914'; ctx.fillRect(2,2,W-4,size-4);
-  ctx.fillStyle='#A0792A'; ctx.fillRect(4,4,W-8,size-8);
-  ctx.fillStyle='#C49A3C';
-  ctx.fillRect(6,6,(W-12)/2-1,size-12);
-  ctx.fillRect(6+(W-12)/2+1,6,(W-12)/2-1,size-12);
-  ctx.strokeStyle='#7A5510';ctx.lineWidth=1.5;
-  ctx.strokeRect(6,6,(W-12)/2-1,size-12);
-  ctx.strokeRect(6+(W-12)/2+1,6,(W-12)/2-1,size-12);
-  // Door knobs
-  ctx.fillStyle='#8B5E10';
-  ctx.beginPath();ctx.arc(W/2-3,size/2,2,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(W/2+3,size/2,2,0,Math.PI*2);ctx.fill();
-  // Top trim
-  ctx.fillStyle='#7A5510';ctx.fillRect(2,2,W-4,4);
-
-  return c;
-}
-
 // ── Key ──────────────────────────────────────
 function drawKeyTex(size){
   const c=document.createElement('canvas');c.width=c.height=size;
@@ -162,5 +129,51 @@ function drawBomb(size){
   ctx.beginPath();ctx.arc(s*.5,s*.58,s*.34,Math.PI*.15,Math.PI*.85);ctx.stroke();
   // highlight
   ctx.fillStyle='rgba(255,255,255,0.35)';ctx.beginPath();ctx.ellipse(s*.38,s*.46,s*.07,s*.04,-0.6,0,Math.PI*2);ctx.fill();
+  return c;
+}
+
+// ── Hay bundle (square art; stretched ×1/0.6 when displayed) ──
+function drawHay(size){
+  const c=document.createElement('canvas');c.width=c.height=size;
+  const ctx=c.getContext('2d'),s=size;
+  ctx.fillStyle='rgba(60,90,20,0.25)';
+  ctx.beginPath();ctx.ellipse(s*.5,s*.86,s*.34,s*.08,0,0,Math.PI*2);ctx.fill();
+  // body
+  ctx.fillStyle='#e6b84a';
+  ctx.beginPath();ctx.ellipse(s*.5,s*.62,s*.34,s*.26,0,0,Math.PI*2);ctx.fill();
+  // straw strokes
+  ctx.strokeStyle='#c8932a';ctx.lineWidth=1.5;
+  for(let k=-3;k<=3;k++){ctx.beginPath();ctx.moveTo(s*(.5+k*.08),s*.40);ctx.lineTo(s*(.5+k*.09),s*.84);ctx.stroke();}
+  ctx.strokeStyle='#f4d878';ctx.lineWidth=1.5;
+  for(let k=-2;k<=2;k++){ctx.beginPath();ctx.moveTo(s*(.5+k*.1),s*.42);ctx.lineTo(s*(.5+k*.07),s*.30+Math.abs(k)*s*.03);ctx.stroke();}
+  // band
+  ctx.strokeStyle='#a0522d';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(s*.18,s*.62);ctx.quadraticCurveTo(s*.5,s*.72,s*.82,s*.62);ctx.stroke();
+  return c;
+}
+
+// ── Thatched hut (square art; stretched ×1/0.6 when displayed) ──
+function drawHut(size){
+  const c=document.createElement('canvas');c.width=c.height=size;
+  const ctx=c.getContext('2d'),s=size;
+  ctx.fillStyle='rgba(50,80,20,0.25)';
+  ctx.beginPath();ctx.ellipse(s*.5,s*.9,s*.42,s*.07,0,0,Math.PI*2);ctx.fill();
+  // wall
+  ctx.fillStyle='#b98a55';ctx.fillRect(s*.2,s*.5,s*.6,s*.4);
+  ctx.fillStyle='#a07546';ctx.fillRect(s*.2,s*.5,s*.6,s*.05);
+  // door
+  ctx.fillStyle='#4a3320';
+  ctx.beginPath();ctx.moveTo(s*.42,s*.9);ctx.lineTo(s*.42,s*.66);ctx.quadraticCurveTo(s*.5,s*.56,s*.58,s*.66);ctx.lineTo(s*.58,s*.9);ctx.closePath();ctx.fill();
+  // thatched roof
+  ctx.fillStyle='#e0b246';
+  ctx.beginPath();ctx.moveTo(s*.5,s*.06);ctx.lineTo(s*.92,s*.56);ctx.lineTo(s*.08,s*.56);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#caa035';
+  ctx.beginPath();ctx.moveTo(s*.5,s*.06);ctx.lineTo(s*.92,s*.56);ctx.lineTo(s*.62,s*.56);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#b88a28';ctx.lineWidth=1.5;
+  for(let k=0;k<9;k++){const x=s*(.14+k*.09);ctx.beginPath();ctx.moveTo(s*.5+(x-s*.5)*.15,s*.12);ctx.lineTo(x,s*.56);ctx.stroke();}
+  ctx.strokeStyle='#f1d37a';ctx.lineWidth=1;
+  for(let k=1;k<4;k++){const y=s*(.14+k*.11);ctx.beginPath();ctx.moveTo(s*(.5-.04-k*.1),y);ctx.lineTo(s*(.5+.04+k*.1),y);ctx.stroke();}
+  // eave shadow
+  ctx.fillStyle='rgba(0,0,0,0.18)';ctx.fillRect(s*.2,s*.56,s*.6,s*.04);
   return c;
 }
