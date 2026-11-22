@@ -223,7 +223,11 @@ class GameScene extends Phaser.Scene{
       left:Phaser.Input.Keyboard.KeyCodes.A, right:Phaser.Input.Keyboard.KeyCodes.D,
       space:Phaser.Input.Keyboard.KeyCodes.SPACE, f:Phaser.Input.Keyboard.KeyCodes.F, b:Phaser.Input.Keyboard.KeyCodes.B,
     });
-    this._spWas=false;this._fWas=false;this._bWas=false;
+    this.input.keyboard.on('keydown-B',()=>this._tryBuild());   // event-based: a quick tap between frames still counts
+    this._spTap=false;this._fTap=false;
+    this.input.keyboard.on('keydown-SPACE',()=>{this._spTap=true;});
+    this.input.keyboard.on('keydown-F',()=>{this._fTap=true;});
+    this._spWas=false;this._fWas=false;
 
     // Colliders
     this.physics.add.collider(this.player,this.walls);
@@ -273,7 +277,7 @@ class GameScene extends Phaser.Scene{
     this._updateBombs(dt);
     if(this._caught)return;
 
-    const {up,down,left,right,space,f,b}=this.keys;
+    const {up,down,left,right,space,f}=this.keys;
     const sx=px-_camX,sy=py-_camY;
 
     // Hut proximity
@@ -291,10 +295,10 @@ class GameScene extends Phaser.Scene{
 
     // Jump
     const spDown=space.isDown||_vbJump;
-    if(spDown&&!this._spWas&&!this._hiding&&!this._jumping){
+    if(((spDown&&!this._spWas)||this._spTap)&&!this._hiding&&!this._jumping){
       this._jumping=true;this._jumpT=0;
     }
-    this._spWas=spDown;
+    this._spWas=spDown;this._spTap=false;
     if(this._jumping){
       this._jumpT+=dt;const t=this._jumpT/0.42;
       if(t>=1){
@@ -326,17 +330,13 @@ class GameScene extends Phaser.Scene{
 
     // Hide/F
     const fDown=f.isDown||_vbHide;
-    if(fDown&&!this._fWas){
+    if((fDown&&!this._fWas)||this._fTap){
       if(this._nearHut&&!this._hiding&&!this._jumping){
         this._hiding=true;this._hideT=0;this.player.setAlpha(0.12);
         UI.setStatus('躲在茅草屋裡','hiding');
       } else if(this._hiding){this._eject();}
     }
-    this._fWas=fDown;
-
-    // Build a hut (B)
-    if(b.isDown&&!this._bWas)this._tryBuild();
-    this._bWas=b.isDown;
+    this._fWas=fDown;this._fTap=false;
 
     // Depth sort against trees
     this.player.setDepth(4.5+py/MAP_H);
