@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8"/>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+  <meta name="color-scheme" content="light"/>
+  <title>末日炸彈 v0.1</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+  <script src="assets_v2.4.js"></script>
+  <link rel="stylesheet" href="ui.css"/>
+
+  <!--
+  ═══════════════════════════════════════════════
+  末日炸彈 v0.1 — 版本更新說明（以下為沿用自 z_train 的歷史紀錄）
+  ═══════════════════════════════════════════════
+  v4.7  直式尺寸修正 + 2×2 按鈕佈局
+    - 直式改為 400×640 (遊戲區 480px + 訊息欄 160px)
+    - Phaser canvas 高度 800 (800×0.6=480)
+    - info-right 改為 column 方向 (上道具/下按鈕)
+
+  v4.6  小地圖放大 + 資訊欄緊貼 + 圓弧方框
+    - 小地圖寬度改為資訊欄 1/3 (resA:267px, resB:133px)
+    - resB gameH 修正為 1000 (視覺高度 600px = 1000×0.6)
+    - 資訊欄緊貼遊戲區底部 (top=320/600px)
+    - 所有道具/虛擬按鈕改為圓弧方框 (border-radius:14px)
+
+  v4.5  小修正
+    - 重置鍵改用文字
+    - 小地圖置中
+    - 虛擬按鈕放大 62px，置於右下角
+    - 選擇模式畫面顯示版本號
+    - 過關時顯示完成時間
+
+  v4.4  頂端訊息列 + 資訊欄簡化
+    - 重置鍵/時鐘/殭屍數/狀態 移至遊戲區頂端置中膠囊
+    - 資訊欄：左(搖桿或留白) / 中(小地圖) / 右(道具+按鈕)
+
+  v4.3  資訊欄佈局重構
+    - 重置鍵移入資訊欄左側，右方顯示時鐘+殭屍數
+    - 資訊欄三欄：左(重置+時鐘) / 中(小地圖) / 右(道具+虛擬按鈕)
+    - 虛擬方向鍵置於資訊欄左下角
+    - 虛擬動作按鈕與道具圖示並列在右欄
+
+  v4.2  直向小地圖修正
+    - initMinimap 加入 canvas CSS size 設定
+    - resB info panel 各子元素加 flex:0 0 固定寬度
+    - resA 同步改為 flex basis 確保不被壓縮
+
+  v4.1  橫向佈局修正 + 直向小地圖修正
+    - 模式A: Phaser canvas 800×534，視覺地圖 800×320
+    - 模式A資訊欄: 800×160 橫向排列，置於視覺地圖下方
+    - 模式B: 修正 flex-wrap 導致小地圖消失，改 nowrap
+    - 虛擬控制器位置隨資訊欄高度更新
+
+  v4.0  雙解析度佈局 + 全面重構
+    - 選模式畫面：選解析度 A(800×480) 或 B(400×800)
+    - 模式 A：遊戲區 640×480，右側 160px 資訊欄
+    - 模式 B：遊戲區 400×600，底部 200px 資訊欄
+    - 資訊欄內含：時鐘、殭屍數、小地圖、道具欄
+    - 鑰匙圖示不可點（顯示用）；手槍圖示=射擊按鈕
+    - 手機模式：虛擬搖桿 + 跳躍/躲藏按鈕
+    - 重置鍵回到模式選擇畫面
+
+  v3.x  基礎遊戲 + 觸控支援
+  ═══════════════════════════════════════════════
+  -->
+</head>
+<body>
+
+<!-- ── Game shell ── -->
+<div id="shell">
+  <div id="iso-shell"><div id="game-container"></div></div>
+  <canvas id="fog-canvas"></canvas>
+
+  <!-- Top bar: reset + clock + status, floats over game centred -->
+  <div id="top-bar">
+    <button id="reset-btn" onclick="resetGame()">重置</button>
+    <div id="clock-box" class="grey">
+      <div id="clock-phase">待機中</div>
+      <div id="clock-time">00:05</div>
+    </div>
+    <div id="zombie-count">🧟×1</div>
+    <div id="status-msg">等待開始</div>
+  </div>
+
+  <!-- Hint text -->
+  <div id="hint-text"></div>
+
+  <!-- Info panel: bottom bar -->
+  <div id="info-panel">
+
+    <!-- LEFT: vpad placeholder (blank in kb-mode) -->
+    <div id="info-left">
+      <div id="vpad-wrap"><canvas id="vpad-canvas" width="120" height="120"></canvas></div>
+    </div>
+
+    <!-- CENTRE: minimap -->
+    <div id="minimap-wrap"><canvas id="minimap-canvas"></canvas></div>
+
+    <!-- RIGHT: item slots + action buttons -->
+    <div id="info-right">
+      <div id="item-hud">
+        <div class="slot-group">
+          <div class="item-slot empty" id="slot-gun">🔫</div>
+          <div class="item-label">手槍</div>
+        </div>
+        <div class="slot-group">
+          <div class="item-slot empty" id="slot-key">🔑</div>
+          <div class="item-label">鑰匙</div>
+        </div>
+      </div>
+      <!-- Virtual action buttons (mob-mode only, beside item slots) -->
+      <div id="vbtn-wrap">
+        <div class="slot-group">
+          <button class="vbtn" id="vbtn-jump">⬆️</button>
+          <div class="item-label">跳</div>
+        </div>
+        <div class="slot-group">
+          <button class="vbtn" id="vbtn-hide">🚪</button>
+          <div class="item-label">躲</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end info-panel -->
+</div>
+
+<script src="scene.js"></script>
+<script src="enemy.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
