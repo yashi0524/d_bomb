@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 // scene.js — map (trees), fog of war, ray-cast, level generation, player, items, GameScene
-// (falling bombs → bomb.js, hay + huts → hay.js, UI/layout/HUD → ui.js)
+// (falling bombs → bomb.js, pickups + huts → items.js, UI/layout/HUD → ui.js)
 // ═══════════════════════════════════════════════
 
 // ── ISO scale ──
@@ -136,7 +136,7 @@ function generateLevel(){
 }
 
 // ═══════════════════════════════════════════════
-// Phaser Scene (core: map / player / items). Bomb / hay / UI methods are mixed in by bomb.js / hay.js / ui.js
+// Phaser Scene (core: map / player / items). Bomb / hay / UI methods are mixed in by bomb.js / items.js / ui.js
 // ═══════════════════════════════════════════════
 class GameScene extends Phaser.Scene{
   constructor(){super('GameScene');}
@@ -145,7 +145,7 @@ class GameScene extends Phaser.Scene{
     this.textures.addCanvas('player',  drawCat(48));
     this.textures.addCanvas('tree_tex',drawTree(64));
     this._preloadBombs();
-    this._preloadHay();
+    this._preloadItems();
     this.textures.addCanvas('key_tex', drawKeyTex(36));
     this.textures.addCanvas('exit_locked',drawExitTex(48,true));
     this.textures.addCanvas('exit_open',  drawExitTex(48,false));
@@ -206,9 +206,9 @@ class GameScene extends Phaser.Scene{
     this._jumpGhost=null;
     this._shadow=this.add.graphics().setDepth(4);
 
-    // Bombs (bomb.js) + hay / huts (hay.js)
+    // Bombs (bomb.js) + items / huts (items.js)
     this._initBombs();
-    this._initHay();
+    this._initItems();
 
     // HUD text (screen-fixed)
     this._hideBar=this.add.graphics().setDepth(20).setScrollFactor(0);
@@ -223,7 +223,7 @@ class GameScene extends Phaser.Scene{
       left:Phaser.Input.Keyboard.KeyCodes.A, right:Phaser.Input.Keyboard.KeyCodes.D,
       space:Phaser.Input.Keyboard.KeyCodes.SPACE, f:Phaser.Input.Keyboard.KeyCodes.F, b:Phaser.Input.Keyboard.KeyCodes.B,
     });
-    this.input.keyboard.on('keydown-B',()=>this._tryBuild());   // event-based: a quick tap between frames still counts
+    this.input.keyboard.on('keydown-B',()=>this._onBuildKey());   // event-based: a quick tap between frames still counts
     this._spTap=false;this._fTap=false;
     this.input.keyboard.on('keydown-SPACE',()=>{this._spTap=true;});
     this.input.keyboard.on('keydown-F',()=>{this._fTap=true;});
@@ -235,11 +235,11 @@ class GameScene extends Phaser.Scene{
     // State
     this._state='waiting';this._pt=0;
     this._startTime=null;this._gameTime=0;
-    this._hiding=false;this._hideT=0;this._nearHut=null;
+    this._hiding=false;this._hideT=0;this._nearHut=null;this._hideHut=null;
     this._caught=false;this._won=false;
     this._keyLbl=null;
 
-    this._showOv('🐱','炸彈會從天上掉下來！<br>收集 🌾 乾草，按 B 蓋茅草屋躲藏<br><br>找到 🔑 鑰匙 → 抵達 EXIT 即勝利');
+    this._showOv('🐱','炸彈會從天上掉下來！<br>🌾 乾草蓋屋、🪵 木頭升級、🛡 盾牌擋炸<br><br>找到 🔑 鑰匙 → 抵達 EXIT 即勝利');
     this._hudUpdate();
   }
 
@@ -257,7 +257,7 @@ class GameScene extends Phaser.Scene{
   }
 
   _eject(){
-    this._hiding=false;this._hideT=0;this.player.setAlpha(1);this._hideBar.clear();
+    this._hiding=false;this._hideT=0;this._hideHut=null;this.player.setAlpha(1);this._hideBar.clear();
     const sx=this.player.x-_camX,sy=this.player.y-_camY;
     this._ejectTxt.setText('彈出！').setPosition(sx,sy-40);
     this.time.delayedCall(800,()=>{if(this._ejectTxt)this._ejectTxt.setText('');});
@@ -332,8 +332,8 @@ class GameScene extends Phaser.Scene{
     const fDown=f.isDown||_vbHide;
     if((fDown&&!this._fWas)||this._fTap){
       if(this._nearHut&&!this._hiding&&!this._jumping){
-        this._hiding=true;this._hideT=0;this.player.setAlpha(0.12);
-        UI.setStatus('躲在茅草屋裡','hiding');
+        this._hiding=true;this._hideT=0;this._hideHut=this._nearHut;this.player.setAlpha(0.12);
+        UI.setStatus('躲在'+(this._nearHut.type==='wood'?'木屋':'茅草屋')+'裡','hiding');
       } else if(this._hiding){this._eject();}
     }
     this._fWas=fDown;this._fTap=false;
@@ -372,8 +372,8 @@ class GameScene extends Phaser.Scene{
       this._keyLbl=this.add.text(sx+9,sy-24,'🔑',{fontSize:'14px'}).setOrigin(0.5,1).setDepth(20).setScrollFactor(0);
     }
 
-    // Hay pickup / respawn (hay.js)
-    this._updateHay(dt,px,py);
+    // Pickups / durability pips / shield ring (items.js)
+    this._updateItems(dt,px,py);
 
     // Exit
     if(!this._exitLocked&&Phaser.Geom.Circle.Contains(this._exitZone,px,py)){

@@ -174,3 +174,12 @@
       top:44px;   /* just below the top-bar pill */
     }
   
+
+/* ── Portrait (B): 2×2 item grid + smaller virtual buttons so 4 slots fit ── */
+body.resB #info-right{padding:4px 6px;gap:4px;}
+body.resB #item-hud{flex-wrap:wrap;gap:4px;width:84px;align-self:flex-end;}
+body.resB #item-hud .slot-group{flex:0 0 auto;width:38px;gap:0;}
+body.resB #item-hud .item-slot{width:38px;height:38px;font-size:18px;border-radius:10px;}
+body.resB #item-hud .item-label{display:none;}
+body.resB #vbtn-wrap{gap:6px;justify-content:flex-end;}
+body.resB .vbtn{width:50px;height:50px;font-size:22px;}

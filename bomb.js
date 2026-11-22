@@ -92,7 +92,11 @@ Object.assign(GameScene.prototype,{
     this.tweens.add({targets:sc,alpha:0,delay:2500,duration:2500,onComplete:()=>sc.destroy()});
     // hit test
     const d=Phaser.Math.Distance.Between(this.player.x,this.player.y,b.x,b.y);
-    if(d<BOMB_BLAST_R&&!this._hiding&&!(this._jumping&&this._jumpZ>JUMP_SAFE_Z))this._hit();
+    if(d<BOMB_BLAST_R&&!(this._jumping&&this._jumpZ>JUMP_SAFE_Z)){
+      if(this._hiding)this._hideHut?this._hutTakeHit(this._hideHut):0;   // the hut absorbs it
+      else if(this._hasShield)this._shieldBlock();                        // or the shield
+      else this._hit();
+    }
   },
 
   _hit(){
