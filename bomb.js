@@ -92,11 +92,18 @@ Object.assign(GameScene.prototype,{
     this.tweens.add({targets:sc,alpha:0,delay:2500,duration:2500,onComplete:()=>sc.destroy()});
     // hit test
     const d=Phaser.Math.Distance.Between(this.player.x,this.player.y,b.x,b.y);
-    if(d<BOMB_BLAST_R&&!(this._jumping&&this._jumpZ>JUMP_SAFE_Z)){
-      if(this._hiding)this._hideHut?this._hutTakeHit(this._hideHut):0;   // the hut absorbs it
-      else if(this._hasShield)this._shieldBlock();                        // or the shield
+    const playerHit=d<BOMB_BLAST_R&&!(this._jumping&&this._jumpZ>JUMP_SAFE_Z);
+    // every hut caught in the blast loses one durability (whether or not anyone is inside)
+    const hutsHit=this._huts.filter(h=>Phaser.Math.Distance.Between(h.x,h.y,b.x,b.y)<BOMB_BLAST_R);
+    const hideHut=this._hiding?this._hideHut:null;
+    // the cat is safe inside a hut if the blast reaches either the cat or that hut
+    const sheltered=!!hideHut&&(playerHit||hutsHit.includes(hideHut));
+    if(!this._hiding&&playerHit){
+      if(this._hasShield)this._shieldBlock();   // shield soaks one blast
       else this._hit();
     }
+    hutsHit.slice().forEach(h=>this._hutTakeHit(h));
+    if(hideHut&&sheltered&&!hutsHit.includes(hideHut))this._hutTakeHit(hideHut);  // blast reached the cat inside but not the hut centre
   },
 
   _hit(){

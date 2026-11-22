@@ -161,16 +161,21 @@ Object.assign(GameScene.prototype,{
     this._toast(`🛖 升級成木屋！可擋 ${CABIN_HP} 次爆炸`,'#ffd9a0');
   },
 
-  // A blast reached the cat while hiding in `h`: the hut soaks it up
+  // A blast hit hut `h`: it loses one durability; at zero it is destroyed (and the cat inside is ejected)
   _hutTakeHit(h){
+    if(!this._huts.includes(h))return;
+    const inside=(this._hideHut===h&&this._hiding);
+    const nm=h.type==='wood'?'木屋':'茅草屋';
     h.hp--;
     this.tweens.add({targets:h.spr,alpha:0.3,yoyo:true,repeat:2,duration:60});
-    if(h.hp>0){this._toast(`${h.type==='wood'?'木屋':'茅草屋'}擋下爆炸！剩 ${h.hp} 次`,'#ffe08a');return;}
-    // destroyed
+    if(h.hp>0){
+      this._toast(`${nm}被炸到！耐久剩 ${h.hp}/${h.max}`,inside?'#ffe08a':'#ffd0a0');
+      return;
+    }
     h.spr.destroy();h.body.destroy();
     this._huts.splice(this._huts.indexOf(h),1);
-    this._eject();
-    this._toast(`💥 ${h.type==='wood'?'木屋':'茅草屋'}被炸毀了！`,'#ff9a9a');
+    if(inside)this._eject();
+    this._toast(`💥 ${nm}被炸毀了！`,'#ff9a9a');
   },
 
   // Shield soaks one blast
